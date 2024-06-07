@@ -19,9 +19,6 @@ def changeRunning():
     global isRunning
     isRunning = not isRunning
 
-eventDetected = multiprocessing.Event()
-eventMoved = multiprocessing.Event()
-
 # 注册快捷键
 # keyboard.add_hotkey('alt+1', changeRunning, args=(), suppress=True, timeout=1, trigger_on_release=False)
 
@@ -36,18 +33,15 @@ region = (
 # region = (1000,1000,2560,1600)
 capture = Capturer(title=GetWindowText(GetForegroundWindow()), region=region)
 
-model = YOLOv10(r"S:\code\klbq\best.pt", verbose=False)
+model = YOLOv10(r"./best.pt", verbose=False)
 
-driver = ctypes.CDLL(r"S:\code\klbq\MouseControl.dll")
+driver = ctypes.CDLL(r"./MouseControl.dll")
 
 targetX, targetY = 0, 0  # 全局相对移动参数
 
 
-def linear_interpolation(num_steps, delay,eventDetected, eventMoved):  # 绝对平滑移动
+def linear_interpolation(num_steps, delay):  # 绝对平滑移动
     while True:
-        print("deteced wait")
-        eventDetected.wait()
-        print("Move start")
         x = targetX
         y = targetY
         print("target:", x, y)
@@ -58,25 +52,14 @@ def linear_interpolation(num_steps, delay,eventDetected, eventMoved):  # 绝对�
         for i in range(1, num_steps + 1):
             if x != targetX or y != targetY or x == 0 or y == 0:
                 print("x,y changed", x, y, targetX, targetY)
-                print("detected reset")
-                eventDetected.clear()
-                print("Move set")
-                eventMoved.set()
                 break
             driver.move_R(dx, dy)    
             time.sleep(delay)
-        print('detected reset')
-        eventDetected.clear()
-        print('Move set')
-        eventMoved.set()
         
         
 
 
 def checkBoxes(boxes):
-    print("move wait")
-    eventMoved.wait()
-    print("move start")
     if len(boxes) <= 0:
         return False
     closedCenter = (160, 160)
@@ -98,14 +81,10 @@ def checkBoxes(boxes):
     moveX, moveY = moveX * ratio, moveY * ratio
     # driver.move_R(int(moveX), int(moveY))
     targetX, targetY = int(moveX), int(moveY)
-    print('move reset')
-    eventMoved.clear()
-    print('detected set')
-    eventDetected.set()
     return True
 
 
-def loop(eventDetected, eventMoved):
+def loop():
     while True:
         print("loop")
         if not isRunning:
@@ -114,7 +93,7 @@ def loop(eventDetected, eventMoved):
             continue
         start_time = time.time()
         frame = capture.backup(region)
-        # result = model.predict(frame)[0]
+        result = model.predict(frame)[0]
         end_time = time.time()
         result=[]
         if checkBoxes([]) and isDebug:
@@ -137,21 +116,10 @@ def loop(eventDetected, eventMoved):
             break
     cv2.destroyAllWindows()
 
-def print_event(eventDetected, eventMoved):
-    while True:
-        print("eventDetected:", eventDetected.is_set())
-        print("eventMoved:", eventMoved.is_set())
-        if not eventDetected.is_set() and not eventMoved.is_set():
-            eventMoved.set()
-        time.sleep(1)
-
 if __name__ == "__main__":
-    moveP = Process(target=linear_interpolation, name="Move", args=(10000, 0.01,eventDetected, eventMoved))
-    moveP.start()
-    moveP.join()
-    pl = Process(target=loop, name="Loop", args=(eventDetected, eventMoved))
+    # moveP = Process(target=linear_interpolation, name="Move", args=(10000, 0.01,eventDetected, eventMoved))
+    # moveP.start()
+    # moveP.join()
+    pl = Process(target=loop, name="Loop")
     pl.start()
     pl.join()
-    printP = Process(target=print_event, name="Print",args=(eventDetected, eventMoved))
-    printP.start()
-    printP.join()
