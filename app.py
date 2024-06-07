@@ -5,7 +5,8 @@ from ultralytics import YOLOv10
 
 
 def yolov10_inference(image, video, model_id, image_size, conf_threshold):
-    model = YOLOv10.from_pretrained(f'jameslahm/{model_id}')
+    # model = YOLOv10.from_pretrained(f'jameslahm/{model_id}')
+    model = YOLOv10(r'best.pt')
     if image:
         results = model.predict(source=image, imgsz=image_size, conf=conf_threshold)
         annotated_image = results[0].plot()

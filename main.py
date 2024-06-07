@@ -1,0 +1,157 @@
+from tools import Capturer, Monitor, KlbqV10
+from multiprocessing import Process
+import multiprocessing
+import cv2
+from win32gui import FindWindow, SetWindowPos, GetWindowText, GetForegroundWindow
+import time
+import ctypes
+import os
+import keyboard
+from ultralytics import YOLOv10
+import threading
+
+
+isRunning = True
+isDebug = True
+
+
+def changeRunning():
+    global isRunning
+    isRunning = not isRunning
+
+eventDetected = multiprocessing.Event()
+eventMoved = multiprocessing.Event()
+
+# 注册快捷键
+# keyboard.add_hotkey('alt+1', changeRunning, args=(), suppress=True, timeout=1, trigger_on_release=False)
+
+imgSize = 320
+centerPoint = Monitor.resolution.center()
+region = (
+    centerPoint[0] - imgSize // 2,
+    centerPoint[1] - imgSize // 2,
+    imgSize,
+    imgSize,
+)
+# region = (1000,1000,2560,1600)
+capture = Capturer(title=GetWindowText(GetForegroundWindow()), region=region)
+
+model = YOLOv10(r"S:\code\klbq\best.pt", verbose=False)
+
+driver = ctypes.CDLL(r"S:\code\klbq\MouseControl.dll")
+
+targetX, targetY = 0, 0  # 全局相对移动参数
+
+
+def linear_interpolation(num_steps, delay,eventDetected, eventMoved):  # 绝对平滑移动
+    while True:
+        print("deteced wait")
+        eventDetected.wait()
+        print("Move start")
+        x = targetX
+        y = targetY
+        print("target:", x, y)
+        dx = (x) / num_steps
+        dy = (y) / num_steps
+        dx, dy = int(dx), int(dy)
+        print("dx,dy:", dx, dy)
+        for i in range(1, num_steps + 1):
+            if x != targetX or y != targetY or x == 0 or y == 0:
+                print("x,y changed", x, y, targetX, targetY)
+                print("detected reset")
+                eventDetected.clear()
+                print("Move set")
+                eventMoved.set()
+                break
+            driver.move_R(dx, dy)    
+            time.sleep(delay)
+        print('detected reset')
+        eventDetected.clear()
+        print('Move set')
+        eventMoved.set()
+        
+        
+
+
+def checkBoxes(boxes):
+    print("move wait")
+    eventMoved.wait()
+    print("move start")
+    if len(boxes) <= 0:
+        return False
+    closedCenter = (160, 160)
+    closedDistance = 9999
+    for box in boxes:
+        for pos in box.xywh:
+            box_center = (pos[0], pos[1])
+            # if(box_center[0]<200 and box_center[1]>200):
+            #     return False
+            # 计算当前box的中心点和屏幕中心点(160,160)的距离
+            distance = ((box_center[0] - 160) ** 2 + (box_center[1] - 160) ** 2) ** 0.5
+            if distance < closedDistance:
+                closedDistance = distance
+                closedCenter = box_center
+
+    moveX = (closedCenter[0] - 160) * 2
+    moveY = (closedCenter[1] - 160) * 2
+    ratio = 1
+    moveX, moveY = moveX * ratio, moveY * ratio
+    # driver.move_R(int(moveX), int(moveY))
+    targetX, targetY = int(moveX), int(moveY)
+    print('move reset')
+    eventMoved.clear()
+    print('detected set')
+    eventDetected.set()
+    return True
+
+
+def loop(eventDetected, eventMoved):
+    while True:
+        print("loop")
+        if not isRunning:
+            time.sleep(0.1)
+            print("暂停")
+            continue
+        start_time = time.time()
+        frame = capture.backup(region)
+        # result = model.predict(frame)[0]
+        end_time = time.time()
+        result=[]
+        if checkBoxes([]) and isDebug:
+            # 绘制yolo结果'
+            new_frame = result.plot()
+            # 添加FPS
+            cv2.putText(
+                new_frame,
+                f"FPS: {1/(end_time-start_time):.2f}",
+                (10, 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                1,
+            )
+            cv2.imshow("frame", new_frame)
+        elif isDebug:
+            cv2.imshow("frame", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
+    cv2.destroyAllWindows()
+
+def print_event(eventDetected, eventMoved):
+    while True:
+        print("eventDetected:", eventDetected.is_set())
+        print("eventMoved:", eventMoved.is_set())
+        if not eventDetected.is_set() and not eventMoved.is_set():
+            eventMoved.set()
+        time.sleep(1)
+
+if __name__ == "__main__":
+    moveP = Process(target=linear_interpolation, name="Move", args=(10000, 0.01,eventDetected, eventMoved))
+    moveP.start()
+    moveP.join()
+    pl = Process(target=loop, name="Loop", args=(eventDetected, eventMoved))
+    pl.start()
+    pl.join()
+    printP = Process(target=print_event, name="Print",args=(eventDetected, eventMoved))
+    printP.start()
+    printP.join()
