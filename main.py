@@ -77,10 +77,20 @@ def checkBoxes(boxes):
 
     moveX = (closedCenter[0] - 160) * 2
     moveY = (closedCenter[1] - 160) * 2
-    ratio = 1
+    ratio = 0.5
+    maxMove = 100
+    if moveX > maxMove:
+        moveX = maxMove
+    if moveX < -maxMove:
+        moveX = -maxMove
+    if moveY > maxMove:
+        moveY = maxMove
+    if moveY < -maxMove:
+        moveY = -maxMove
     moveX, moveY = moveX * ratio, moveY * ratio
-    # driver.move_R(int(moveX), int(moveY))
-    targetX, targetY = int(moveX), int(moveY)
+    driver.move_R(int(moveX), int(moveY))
+    # targetX, targetY = int(moveX), int(moveY)
+    
     return True
 
 
@@ -95,8 +105,7 @@ def loop():
         frame = capture.backup(region)
         result = model.predict(frame)[0]
         end_time = time.time()
-        result=[]
-        if checkBoxes([]) and isDebug:
+        if checkBoxes(result.boxes) and isDebug:
             # 绘制yolo结果'
             new_frame = result.plot()
             # 添加FPS
